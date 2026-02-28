@@ -4,21 +4,27 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import pandas as pd
 
-# Настройка браузера
+# 1. Настройка маскировки
 options = webdriver.ChromeOptions()
+# Добавляем реальный User-Agent
+options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+options.add_argument('--disable-blink-features=AutomationControlled')
+options.add_experimental_option("excludeSwitches", ["enable-automation"])
+options.add_experimental_option('useAutomationExtension', False)
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+data = []
 
 try:
     print("Открываю Indeed...")
     driver.get("https://www.indeed.com/jobs?q=truck+driver")
-    time.sleep(5)
+    time.sleep(5) 
 
-    titles = driver.find_elements("css selector", "h2.jobTitle span")
-    
-    # 1. Находим карточки
+    # 2. Собираем ссылки
     cards = driver.find_elements("css selector", "div.job_seen_beacon")
     job_links = []
+    
     for card in cards:
         try:
             t_elem = card.find_element("css selector", "h2.jobTitle a")
@@ -29,54 +35,46 @@ try:
         except:
             continue
 
-    data = []
-    print(f"Начинаю глубокий сбор для {len(job_links)} вакансий...")
+    print(f"Нашел {len(job_links)} ссылок. Начинаю сбор данных...")
 
+    # 3. Глубокий сбор
     for job in job_links:
+        current_name = job['name']
+        current_url = job['url']
         try:
-            driver.get(job['url'])
+            driver.get(current_url)
             time.sleep(3) 
 
             try:
+                # Ищем зарплату
                 salary_elem = driver.find_element("css selector", "#salaryInfoAndJobType, .jobsearch-JobMetadataHeader-item")
                 salary_val = salary_elem.text.strip()
             except:
                 salary_val = "Не указана"
 
-            print(f"Проверено: {job['name']} | Зарплата: {salary_val}")
+            print(f"Собрал: {current_name} | Зарплата: {salary_val}")
 
             data.append({
-                "Title": job['name'],
+                "Title": current_name,
                 "Salary": salary_val,
-                "URL": job['url'],
+                "URL": current_url,
                 "Source": "Indeed"
             })
             
         except Exception as e:
-            print(f"Ошибка на вакансии {job['name']}: {e}")
-            # ССЫЛКА (важно!)
-            link = card.find_element("css selector", "h2.jobTitle a").get_attribute("href")
-
-            print(f"Собрал: {name} | Зарплата: {salary_val}")
-
-           
-            if name: 
-                data.append({
-                    "Title": name,
-                    "Salary": salary_val,
-                    "URL": link,
-                    "Source": "Indeed"
-                })
-
-        except Exception as e:
+            print(f"Ошибка на вакансии {current_name}: {e}")
             continue
 
-    #Сохраняем 
-    df = pd.DataFrame(data)
-    df.to_csv("indeed_vacancies.csv", index=False, encoding='utf-8-sig')
-    print(f"\nУспех! Сохранено {len(data)} вакансий в indeed_vacancies.csv")
+    # 4. Сохранение
+    if data:
+        df = pd.DataFrame(data)
+        df.to_csv("indeed_vacancies.csv", index=False, encoding='utf-8-sig')
+        print(f"\nУспех! Сохранено {len(data)} вакансий.")
+    else:
+        print("\nДанные не собраны.")
+
 except Exception as e:
-    print(f"Ошибка: {e}")
+    print(f"Критическая ошибка: {e}")
 
 finally:
-    driver.quit()   
+    driver.quit()
